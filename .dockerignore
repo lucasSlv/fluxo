@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.mongo-data
+.env*
+!.env.example
+coverage
+tests
+*.log
+.DS_Store
+.claude

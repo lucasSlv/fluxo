@@ -22,6 +22,10 @@ const EMAIL = "demo@fluxo.test";
 const TZ = "America/Sao_Paulo";
 
 async function main() {
+  // O usuário demo tem senha pública: nunca o crie em produção por engano.
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "true") {
+    throw new Error("seed:demo bloqueado em produção (defina ALLOW_DEMO_SEED=true se for intencional).");
+  }
   await connectDB();
   const old = await User.findOne({ email: EMAIL }).lean();
   if (old) {

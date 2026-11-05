@@ -1,5 +1,10 @@
 # Fluxo
 
+[![CI](https://github.com/lucasSlv/fluxo/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasSlv/fluxo/actions/workflows/ci.yml)
+[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-black.svg)](LICENSE)
+![Next.js 16](https://img.shields.io/badge/Next.js-16-black)
+![MongoDB](https://img.shields.io/badge/MongoDB-8-green)
+
 **Gestão financeira pessoal completa** — receitas, despesas, contas, cartões de crédito, dívidas, limites de gastos,
 recorrências, objetivos, caixinhas, calendário e relatórios com insights automáticos, em uma interface minimalista
 inspirada em dashboards SaaS premium.
@@ -13,7 +18,8 @@ validação em todas as entradas e testes automatizados dos fluxos financeiros.
 
 - [Funcionalidades](#funcionalidades)
 - [Stack](#stack)
-- [Começando](#começando)
+- [Início rápido com Docker](#início-rápido-com-docker)
+- [Desenvolvimento local](#desenvolvimento-local)
 - [Variáveis de ambiente](#variáveis-de-ambiente)
 - [Scripts](#scripts)
 - [Arquitetura](#arquitetura)
@@ -25,6 +31,8 @@ validação em todas as entradas e testes automatizados dos fluxos financeiros.
 - [Decisões de produto](#decisões-de-produto)
 - [Deploy](#deploy)
 - [Roadmap](#roadmap)
+- [Contribuindo](#contribuindo)
+- [Licença](#licença)
 
 ---
 
@@ -64,42 +72,75 @@ nova movimentação, busca no topo e contador de alertas.
 
 ---
 
-## Começando
+## Início rápido com Docker
+
+A forma mais simples de usar: só precisa do [Docker](https://docs.docker.com/get-docker/) (com Compose).
+
+```bash
+git clone https://github.com/lucasSlv/fluxo.git
+cd fluxo
+docker compose up -d --build
+```
+
+Acesse <http://localhost:3000>, crie sua conta em **/register** e cadastre suas contas com o saldo atual.
+
+O `docker-compose.yml` sobe dois serviços:
+
+| Serviço | Imagem | Porta | Observação |
+|---|---|---|---|
+| `mongo` | `mongo:8` | `27017` | dados persistidos no volume `mongo-data` |
+| `app` | build do `Dockerfile` | `3000` | sobe só depois do Mongo ficar saudável; healthcheck em `/api/health` |
+
+Comandos úteis:
+
+```bash
+docker compose logs -f app                       # logs (JSON estruturado)
+docker compose down                              # para os serviços (mantém os dados)
+docker compose down -v                           # para e APAGA os dados
+docker compose up -d --build                     # atualiza após um git pull
+APP_PORT=8080 MONGO_PORT=27018 docker compose up -d   # outras portas, se 3000/27017 estiverem ocupadas
+```
+
+> **HTTPS / produção:** o compose define `COOKIE_SECURE=false` para funcionar em `http://localhost`. Ao publicar
+> atrás de HTTPS (proxy reverso como Caddy, Nginx ou Traefik), defina `COOKIE_SECURE=true` e não exponha a porta
+> do MongoDB.
+
+### Só a imagem
+
+```bash
+docker build -t fluxo .
+docker run -p 3000:3000 -e MONGODB_URI="mongodb+srv://usuario:senha@cluster/fluxo" fluxo
+```
+
+A imagem usa o build *standalone* do Next.js sobre `node:24-alpine`, roda como usuário sem privilégios e não inclui
+código de testes nem dependências de desenvolvimento.
+
+---
+
+## Desenvolvimento local
 
 ### Pré-requisitos
 
-- Node.js **20.9+** (desenvolvido com Node 24)
-- MongoDB 6+ — via Docker, instalação local ou o script `db:local` (não precisa de Docker)
+- Node.js **20.9+** (o projeto usa Node 24)
+- MongoDB 6+ — via Docker, instalação local, MongoDB Atlas ou o script `db:local` (sem Docker)
 
-### Instalação
+### Passo a passo
 
 ```bash
-git clone git@github.com:lucasSlv/fluxo.git
+git clone https://github.com/lucasSlv/fluxo.git
 cd fluxo
 npm install
 cp .env.example .env.local
+
+# MongoDB — escolha uma opção:
+docker compose up -d mongo     # só o banco, via Docker
+npm run db:local               # sem Docker: mongod local persistido em ./.mongo-data
+
+npm run dev                    # http://localhost:3000
 ```
 
-### Banco de dados (escolha uma opção)
-
-```bash
-# Opção 1 — Docker (Mongo 8 na porta 27017, dados em volume)
-docker compose up -d
-
-# Opção 2 — sem Docker: sobe um mongod local persistido em ./.mongo-data
-npm run db:local
-```
-
-Ou aponte `MONGODB_URI` para um MongoDB Atlas.
-
-### Rodando
-
-```bash
-npm run dev
-```
-
-Acesse <http://localhost:3000>, crie sua conta em **/register**, cadastre suas contas com o saldo atual e comece a
-registrar movimentações.
+Cada usuário começa sem dados: cadastre contas (com saldo inicial) e registre movimentações. Categorias padrão são
+criadas automaticamente no cadastro.
 
 ### Dados de demonstração (opcional)
 
@@ -110,17 +151,28 @@ npm run seed:demo
 Cria **somente** o usuário `demo@fluxo.test` (senha `demo12345`) com ~6 meses de histórico: salário e contas
 recorrentes, despesas variáveis, cartão com compras parceladas e faturas pagas, financiamento, caixinhas, objetivos e
 limites. O seed usa os mesmos services da aplicação (as regras de negócio são aplicadas) e, ao rodar de novo, recria
-apenas esse usuário — nenhum outro dado é tocado.
+apenas esse usuário. Por ter senha pública, ele é **bloqueado quando `NODE_ENV=production`**.
 
 ---
 
 ## Variáveis de ambiente
 
-| Variável | Padrão | Descrição |
-|---|---|---|
-| `MONGODB_URI` | `mongodb://127.0.0.1:27017/fluxo` | String de conexão do MongoDB (obrigatória) |
-| `SESSION_TTL_HOURS` | `12` | Duração da sessão em horas |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` ou `error` |
+Copie `.env.example` para `.env.local` (desenvolvimento) ou configure no seu provedor/compose. Só **`MONGODB_URI`** é
+obrigatória — não há chaves secretas a gerar: as sessões ficam no próprio banco.
+
+| Variável | Obrigatória | Padrão | Descrição |
+|---|---|---|---|
+| `MONGODB_URI` | **sim** | — | String de conexão. Ex.: `mongodb://127.0.0.1:27017/fluxo` ou `mongodb+srv://usuario:senha@cluster.xxxxx.mongodb.net/fluxo` |
+| `SESSION_TTL_HOURS` | não | `12` | Duração da sessão em horas |
+| `LOG_LEVEL` | não | `info` | `debug`, `info`, `warn` ou `error` |
+| `COOKIE_SECURE` | não | `true` em produção | `false` só para rodar o build de produção via HTTP (ex.: compose local) |
+| `ALLOW_DEMO_SEED` | não | — | `true` libera o `seed:demo` com `NODE_ENV=production` (não recomendado) |
+| `APP_PORT` / `MONGO_PORT` | não | `3000` / `27017` | Portas publicadas pelo `docker-compose.yml` |
+
+`NODE_ENV` é definido automaticamente pelo Next.js (`next build`/`next start`) e pela imagem Docker.
+
+**MongoDB Atlas:** crie um cluster, um usuário de banco e libere em *Network Access* o IP de onde a aplicação roda.
+Inclua o nome do banco no caminho da URI (`/fluxo`).
 
 ---
 
@@ -136,6 +188,7 @@ apenas esse usuário — nenhum outro dado é tocado.
 | `npm run lint` | ESLint |
 | `npm run db:local` | MongoDB local sem Docker |
 | `npm run seed:demo` | Usuário de demonstração |
+| `docker compose up -d --build` | Aplicação completa em containers |
 
 ---
 
@@ -274,7 +327,7 @@ Os testes sobem um MongoDB em memória (replica set) — não é preciso ter Mon
 
 ## API (Route Handlers)
 
-Todas exigem sessão (401 sem ela) e retornam erros com o status HTTP correspondente.
+Exceto `/api/health`, todas exigem sessão (401 sem ela) e retornam erros com o status HTTP correspondente.
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -282,6 +335,7 @@ Todas exigem sessão (401 sem ela) e retornam erros com o status HTTP correspond
 | `GET` | `/api/export/report` | CSV de resumo do período (`?month=`, `?year=` ou `?from=&to=`) |
 | `POST` | `/api/transactions/:id/attachments` | Upload de comprovante (multipart, campo `file`) |
 | `GET` | `/api/attachments/:fileId` | Download/visualização do comprovante |
+| `GET` | `/api/health` | Saúde da aplicação e do MongoDB (**pública**, sem dados; usada pelo healthcheck) |
 
 As demais operações são **Server Actions** em `src/modules/*/actions.ts`.
 
@@ -306,11 +360,19 @@ As demais operações são **Server Actions** em `src/modules/*/actions.ts`.
 
 ## Deploy
 
-1. Provisione um MongoDB (ex.: MongoDB Atlas) e defina `MONGODB_URI`.
-2. Faça o build e inicie: `npm run build && npm start` (ou publique em Vercel, Railway, Render etc.).
-3. Em produção o cookie de sessão é `Secure`, portanto sirva a aplicação via **HTTPS**.
-4. Os índices são criados automaticamente pelo Mongoose na primeira conexão; em bancos grandes, prefira criá-los
-   antes do deploy.
+**Com Docker (VPS, Railway, Render, Fly.io…)**
+
+1. Use o `Dockerfile` do repositório (ou `docker compose up -d --build` em um servidor).
+2. Defina `MONGODB_URI` apontando para um MongoDB com autenticação (ex.: Atlas).
+3. Sirva via **HTTPS** com `COOKIE_SECURE=true` (padrão em produção).
+4. Healthcheck: `GET /api/health` (200 quando o banco está acessível, 503 caso contrário).
+
+**Sem Docker (Vercel ou Node)**
+
+1. Defina `MONGODB_URI` nas variáveis de ambiente do provedor.
+2. `npm run build && npm start` (na Vercel, o build é automático).
+
+Os índices são criados pelo Mongoose na primeira conexão; em bases grandes, prefira criá-los antes do deploy.
 
 ---
 
@@ -321,3 +383,15 @@ As demais operações são **Server Actions** em `src/modules/*/actions.ts`.
 - Notificações por e-mail de vencimentos
 - Metas de orçamento sugeridas a partir do histórico
 - Modo escuro
+
+---
+
+## Contribuindo
+
+Contribuições são muito bem-vindas! Leia o [CONTRIBUTING.md](CONTRIBUTING.md) para o fluxo de trabalho, as
+convenções do código e como rodar os testes. Vulnerabilidades devem ser reportadas de forma privada, conforme o
+[SECURITY.md](SECURITY.md).
+
+## Licença
+
+[MIT](LICENSE) © lucasSlv

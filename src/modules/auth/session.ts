@@ -11,10 +11,16 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 export type ActiveSession = { sessionId: string; userId: string; expiresAt: Date; createdAt: Date };
 
+/** Cookie `Secure` em produção. COOKIE_SECURE=false permite testar o build de produção via HTTP (ex.: docker compose local). */
+function cookieSecure(): boolean {
+  if (process.env.COOKIE_SECURE) return process.env.COOKIE_SECURE !== "false";
+  return process.env.NODE_ENV === "production";
+}
+
 async function setCookie(token: string, expiresAt: Date) {
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(),
     sameSite: "lax",
     path: "/",
     expires: expiresAt,
