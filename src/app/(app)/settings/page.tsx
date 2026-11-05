@@ -5,6 +5,7 @@ import { sessionsFor } from "@/modules/settings/service";
 import { serialize } from "@/lib/utils";
 import { Card, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { DeleteAccountButton } from "./_components/delete-account";
 import { PasswordForm, PreferencesForm, ProfileForm, SessionsList } from "./_components/settings-forms";
 
 export const metadata = { title: "Configurações" };
@@ -42,6 +43,15 @@ export default async function SettingsPage() {
           <CardTitle>Segurança e sessões</CardTitle>
           <p className="mb-4 text-xs text-ink-3">Cada sessão expira em 12 horas. Encerre as que você não reconhecer.</p>
           <SessionsList sessions={serialize(sessions)} dateFormat={user.preferences.dateFormat} />
+        </Card>
+        <Card className="border border-neg/20 bg-neg-soft/30">
+          <CardTitle>Zona de perigo</CardTitle>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="max-w-xl text-sm text-ink-2">
+              Exclui sua conta e <b>todo o histórico</b> (movimentações, contas, cartões, dívidas, objetivos, caixinhas e anexos). Não há como recuperar. Você poderá criar uma conta nova do zero.
+            </p>
+            <DeleteAccountButton email={user.email} />
+          </div>
         </Card>
       </div>
     </div>

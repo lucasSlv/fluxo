@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { PAYMENT_METHODS } from "@/lib/constants";
-import { amountCents, dateOnlyString, optionalDate, optionalObjectId, text } from "@/modules/shared/validation";
+import { amountCents, dateOnlyString, objectId, optionalDate, optionalObjectId, text } from "@/modules/shared/validation";
 
 export const transactionSchema = z
   .object({
@@ -27,6 +27,15 @@ export const transactionSchema = z
     }
   });
 export type TransactionInput = z.input<typeof transactionSchema>;
+
+/** Campos editáveis de uma cobrança recorrente no cartão (o cartão e o tipo não mudam). */
+export const cardOccurrenceSchema = z.object({
+  description: text(140).min(1, "Informe a descrição"),
+  amount: amountCents,
+  date: dateOnlyString,
+  categoryId: objectId,
+  notes: text(1000).optional().default(""),
+});
 
 const csv = <const T extends readonly [string, ...string[]]>(values: T) =>
   z

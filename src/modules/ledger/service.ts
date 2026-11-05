@@ -1,6 +1,6 @@
 import "server-only";
 import { connectDB } from "@/lib/db";
-import { Account, Category, CreditCard, Debt, Transaction } from "@/models";
+import { Account, Category, CreditCard, Debt, SavingsBox, Transaction } from "@/models";
 import { monthsBetween, monthRange, type MonthKey } from "@/lib/dates";
 import { accountDeltasExpr, cashflowMatch, oid } from "./rules";
 
@@ -28,10 +28,10 @@ export async function accountBalances(userId: string, asOf?: Date): Promise<Map<
   return map;
 }
 
-/** Saldo de cada caixinha. */
+/** Saldo de cada caixinha (saldo inicial + depósitos − retiradas). */
 export async function savingsBalances(userId: string): Promise<Map<string, number>> {
   await connectDB();
-  const rows = await Transaction.aggregate<{ _id: unknown; total: number }>([
+  const [boxes, rows] = await Promise.all([SavingsBox.find({ userId }).select("initialBalance").lean(), Transaction.aggregate<{ _id: unknown; total: number }>([
     { $match: { userId: oid(userId), status: "paid", kind: { $in: ["savings_deposit", "savings_withdrawal"] } } },
     {
       $group: {
@@ -39,15 +39,18 @@ export async function savingsBalances(userId: string): Promise<Map<string, numbe
         total: { $sum: { $cond: [{ $eq: ["$kind", "savings_deposit"] }, "$amount", { $multiply: ["$amount", -1] }] } },
       },
     },
-  ]);
-  return new Map(rows.map((r) => [String(r._id), r.total]));
+  ])]);
+  const map = new Map<string, number>(boxes.map((b) => [String(b._id), b.initialBalance ?? 0]));
+  for (const r of rows) map.set(String(r._id), (map.get(String(r._id)) ?? 0) + r.total);
+  return map;
 }
 
 /** Por cartão: total de compras − total pago = obrigação em aberto (consome o limite). */
 export async function cardOutstanding(userId: string): Promise<Map<string, number>> {
   await connectDB();
   const rows = await Transaction.aggregate<{ _id: unknown; total: number }>([
-    { $match: { userId: oid(userId), creditCardId: { $ne: null }, status: { $ne: "cancelled" }, kind: { $in: ["expense", "card_payment"] } } },
+    // Só cobranças efetivadas consomem limite (recorrências futuras no cartão ficam "previstas").
+    { $match: { userId: oid(userId), creditCardId: { $ne: null }, status: "paid", kind: { $in: ["expense", "card_payment"] } } },
     {
       $group: {
         _id: "$creditCardId",

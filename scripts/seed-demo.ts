@@ -76,6 +76,8 @@ async function main() {
 
   // Cartão com compra parcelada e fatura paga.
   const { id: card } = await createCard(u, { name: "Cartão Black", institution: "Banco", limit: 800000, closingDay: 25, dueDay: 5, color: "#111111", defaultAccountId: checking });
+  // Assinatura cobrada todo mês no cartão.
+  await createRecurrence(u, { kind: "expense", description: "Spotify", amount: 2190, categoryId: await cat("Assinaturas"), creditCardId: card, frequency: "monthly", startDate: toISODate(first), dueDay: 12 }, TZ);
   await createPurchase(u, { cardId: card, description: "Notebook", amount: 480000, date: toISODate(addMonths(start, -2)), installments: 10, categoryId: await cat("Compras") });
   await createPurchase(u, { cardId: card, description: "Passagens", amount: 96000, date: toISODate(addMonths(start, -1)), installments: 3, categoryId: leisure });
   for (const inv of await cardInvoices(u, card, TZ)) {

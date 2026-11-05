@@ -12,6 +12,8 @@ import { amountCents, centsAllowZero, dateOnlyString, hexColor, objectId, text }
 export const boxSchema = z.object({
   name: text(60).min(1, "Informe o nome"),
   target: centsAllowZero.nullish().transform((v) => (v ? v : null)),
+  /** Valor que já estava guardado antes do cadastro (não debita nenhuma conta). */
+  initialBalance: centsAllowZero.nullish().transform((v) => v ?? 0),
   color: hexColor.default("#111111"),
   icon: text(30).default("piggy-bank"),
 });
@@ -51,18 +53,27 @@ export async function updateBox(userId: string, id: string, input: BoxInput) {
   const data = boxSchema.parse(input);
   await connectDB();
   const before = await assertOwned(SavingsBox, userId, id, "Caixinha");
+  // Ajustar o saldo inicial não pode deixar a caixinha negativa diante das retiradas já feitas.
+  const current = (await savingsBalances(userId)).get(id) ?? 0;
+  if (current - (before.initialBalance ?? 0) + data.initialBalance < 0) {
+    throw invalid("Com esse saldo inicial, a caixinha ficaria negativa pelas retiradas já registradas.", { initialBalance: "Valor baixo demais" });
+  }
   await SavingsBox.updateOne({ _id: id, userId }, { $set: data });
   await audit(userId, "savings_box", id, "update", before, data);
 }
 
-/** Só remove caixinhas zeradas; com histórico, arquiva. */
+/**
+ * Caixinha sem movimentações (só o saldo inicial do cadastro) pode ser excluída direto.
+ * Com movimentações, o saldo precisa ser resgatado antes; então é arquivada para preservar o histórico.
+ */
 export async function deleteBox(userId: string, id: string): Promise<"deleted" | "archived"> {
   await connectDB();
   const box = await assertOwned(SavingsBox, userId, id, "Caixinha");
+  const hasMoves = await Transaction.exists({ userId, savingsBoxId: id });
   const balance = (await savingsBalances(userId)).get(id) ?? 0;
-  if (balance !== 0) throw new AppError("VALIDATION", "Retire o saldo antes de excluir a caixinha.");
+  if (hasMoves && balance !== 0) throw new AppError("VALIDATION", "Retire o saldo antes de excluir a caixinha.");
   await Goal.updateMany({ userId, savingsBoxId: id }, { $set: { savingsBoxId: null } });
-  if (await Transaction.exists({ userId, savingsBoxId: id })) {
+  if (hasMoves) {
     await SavingsBox.updateOne({ _id: id, userId }, { $set: { archived: true } });
     return "archived";
   }

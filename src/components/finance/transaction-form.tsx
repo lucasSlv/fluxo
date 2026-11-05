@@ -32,6 +32,8 @@ export type TransactionFormValue = {
   paymentMethod: string;
   nature: "fixed" | "variable";
   notes: string;
+  /** Ocorrência recorrente no cartão (edição): o cartão é fixo e não há conta/status. */
+  creditCardId?: string;
 };
 
 const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -53,6 +55,8 @@ export function TransactionForm({ initial, onDone }: { initial: TransactionFormV
   const [file, setFile] = useState<File | null>(null);
   const editing = !!initial.id;
   const isCard = v.kind === "expense" && v.paymentMethod === "credit" && !editing;
+  const cardOccurrence = editing && !!initial.creditCardId;
+  const occurrenceCard = cards.find((c) => c.id === initial.creditCardId);
   const set = <K extends keyof TransactionFormValue>(k: K, val: TransactionFormValue[K]) => setV((s) => ({ ...s, [k]: val }));
 
   const upload = async (id: string) => {
@@ -151,7 +155,11 @@ export function TransactionForm({ initial, onDone }: { initial: TransactionFormV
           </Field>
         )}
 
-        {isCard ? (
+        {cardOccurrence ? (
+          <Field label="Cartão" hint="Cobrança recorrente: a fatura é recalculada pela data.">
+            <Input value={occurrenceCard?.name ?? "Cartão"} disabled />
+          </Field>
+        ) : isCard ? (
           <>
             <Field label="Cartão" error={err.cardId}>
               <Select value={cardId} onChange={(e) => setCardId(e.target.value)}>
@@ -198,7 +206,7 @@ export function TransactionForm({ initial, onDone }: { initial: TransactionFormV
           </>
         )}
 
-        {v.kind === "expense" && (
+        {v.kind === "expense" && !cardOccurrence && (
           <Field label="Natureza">
             <Select value={v.nature} onChange={(e) => set("nature", e.target.value as "fixed" | "variable")}>
               <option value="variable">Variável</option>

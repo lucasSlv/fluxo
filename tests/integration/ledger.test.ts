@@ -4,7 +4,7 @@ import { accountBalances, netWorth, periodTotals, savingsBalances } from "@/modu
 import { effectOnAccount } from "@/modules/ledger/rules";
 import { createTransaction, deleteTransaction, listTransactions, setTransactionStatus, updateTransaction } from "@/modules/transactions/service";
 import { accountStatement, deleteAccount } from "@/modules/accounts/service";
-import { createBox, moveBox } from "@/modules/savings/service";
+import { createBox, deleteBox, moveBox, updateBox } from "@/modules/savings/service";
 import { parseDateOnly as d } from "@/lib/dates";
 import { makeAccount, makeUser } from "../support/factory";
 
@@ -116,5 +116,34 @@ describe("ledger consistency", () => {
     await expect(updateTransaction(userId, id, { kind: "income", description: "A", amount: 100, date: "2026-11-01", categoryId: await cat("Salário", "income"), accountId: acc })).rejects.toThrow(/tipo/);
     expect(await deleteAccount(userId, acc)).toBe("archived");
     await expect(createTransaction(userId, { kind: "expense", description: "B", amount: 100, date: "2026-11-01", categoryId: await cat("Outros"), accountId: acc })).rejects.toThrow(/arquivada/);
+  });
+});
+
+describe("savings box with opening balance", () => {
+  it("counts the opening balance without touching accounts or income/expense", async () => {
+    const { userId } = await makeUser();
+    const a = await makeAccount(userId, 100000);
+    const { id: box } = await createBox(userId, { name: "Reserva antiga", initialBalance: 500000, target: 1000000 });
+    expect((await savingsBalances(userId)).get(box)).toBe(500000);
+    expect((await accountBalances(userId)).get(a)).toBe(100000);
+    expect((await periodTotals(userId, ...NOV)).income).toBe(0);
+    expect((await netWorth(userId)).savings).toBe(500000);
+
+    await moveBox(userId, { boxId: box, accountId: a, amount: 20000, date: "2026-11-03", direction: "deposit" });
+    // Pode resgatar além dos depósitos, até o total (inicial + depósitos).
+    await moveBox(userId, { boxId: box, accountId: a, amount: 300000, date: "2026-11-04", direction: "withdrawal" });
+    expect((await savingsBalances(userId)).get(box)).toBe(220000);
+    expect((await accountBalances(userId)).get(a)).toBe(100000 - 20000 + 300000);
+
+    // Reduzir o saldo inicial a ponto de negativar é bloqueado.
+    await expect(updateBox(userId, box, { name: "Reserva antiga", initialBalance: 200000 })).rejects.toThrow(/negativa/);
+    await updateBox(userId, box, { name: "Reserva antiga", initialBalance: 400000 });
+    expect((await savingsBalances(userId)).get(box)).toBe(120000);
+  });
+
+  it("a box with only an opening balance can be deleted directly", async () => {
+    const { userId } = await makeUser();
+    const { id: box } = await createBox(userId, { name: "Cadastro errado", initialBalance: 1000 });
+    expect(await deleteBox(userId, box)).toBe("deleted");
   });
 });

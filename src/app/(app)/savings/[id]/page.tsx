@@ -36,7 +36,7 @@ export default async function SavingsBoxPage({ params }: { params: Promise<{ id:
         </div>
         <div className="flex items-center gap-2">
           {!box.archived && <MoveBoxButton boxId={id} boxName={box.name} balance={box.balance} size="md" />}
-          <BoxFormButton initial={{ id, name: box.name, target: box.target ?? null, color: box.color ?? "#111111", icon: box.icon ?? "piggy-bank" }} />
+          <BoxFormButton initial={{ id, name: box.name, target: box.target ?? null, initialBalance: box.initialBalance ?? 0, color: box.color ?? "#111111", icon: box.icon ?? "piggy-bank" }} />
           <DeleteBoxButton id={id} redirectTo="/savings" />
         </div>
       </div>

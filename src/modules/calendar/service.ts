@@ -5,7 +5,20 @@ import { CreditCard, Transaction } from "@/models";
 import { cardInvoices } from "@/modules/credit-cards/service";
 import { ensureRecurrencesGenerated } from "@/modules/recurring/service";
 
-export type CalendarEventType = "bill_due" | "bill_paid" | "bill_overdue" | "income_expected" | "income_received" | "card_invoice" | "card_installment" | "debt" | "recurring";
+export type CalendarEventType =
+  | "bill_due"
+  | "bill_paid"
+  | "bill_overdue"
+  | "income_expected"
+  | "income_received"
+  | "card_invoice"
+  | "card_installment"
+  | "card_recurring"
+  | "debt"
+  | "recurring";
+
+/** Itens de cartão já estão contidos no valor da fatura: são informativos e não somam em "a pagar". */
+export const CARD_ITEM_TYPES: CalendarEventType[] = ["card_installment", "card_recurring"];
 
 export type CalendarEvent = {
   id: string;
@@ -25,6 +38,7 @@ export const EVENT_STYLE: Record<CalendarEventType, { label: string; dot: string
   income_received: { label: "Receita recebida", dot: "bg-pos", chip: "bg-pos-soft text-green-900" },
   card_invoice: { label: "Fatura do cartão", dot: "bg-ink", chip: "bg-ink text-white" },
   card_installment: { label: "Parcela de cartão", dot: "bg-violet-500", chip: "bg-violet-100 text-violet-900" },
+  card_recurring: { label: "Recorrente no cartão", dot: "bg-fuchsia-500", chip: "bg-fuchsia-100 text-fuchsia-900" },
   debt: { label: "Parcela de dívida", dot: "bg-slate-500", chip: "bg-slate-200 text-slate-900" },
   recurring: { label: "Despesa recorrente", dot: "bg-orange-400", chip: "bg-orange-100 text-orange-900" },
 };
@@ -46,11 +60,11 @@ export async function calendarEvents(userId: string, month: MonthKey, tz: string
   const events: CalendarEvent[] = [];
   for (const tx of txs) {
     // Compras no cartão aparecem pela fatura; só parcelas (2+) aparecem individualmente.
-    if (tx.creditCardId && !(tx.installment?.total && tx.installment.total > 1)) continue;
+    if (tx.creditCardId && !tx.recurrenceId && !(tx.installment?.total && tx.installment.total > 1)) continue;
     const d = (tx.dueDate ?? tx.date).toISOString().slice(0, 10);
     let type: CalendarEventType;
     if (tx.kind === "income") type = tx.status === "paid" ? "income_received" : "income_expected";
-    else if (tx.creditCardId) type = "card_installment";
+    else if (tx.creditCardId) type = tx.recurrenceId ? "card_recurring" : "card_installment";
     else if (tx.status === "paid") type = "bill_paid";
     else if ((tx.dueDate ?? tx.date) < t) type = "bill_overdue";
     else if (tx.debtId) type = "debt";

@@ -45,14 +45,14 @@ validação em todas as entradas e testes automatizados dos fluxos financeiros.
 | **Contas e carteiras** | Conta corrente, poupança, dinheiro, carteira digital e investimentos; saldo inicial, saldo calculado, transferências entre contas, **extrato** por período com saldo acumulado, arquivamento preservando histórico. |
 | **Categorias** | Categorias padrão criadas no cadastro, categorias personalizadas com ícone e cor, subcategorias (1 nível), arquivamento automático quando já há uso. |
 | **Limites mensais** | Limite por categoria **independente para cada mês**, gasto atual (somando subcategorias e compras no cartão), disponível, barras de progresso e alertas configuráveis em 50/75/90/100%. Cópia dos limites do mês anterior. |
-| **Recorrências** | Semanal, mensal, trimestral, semestral e anual; dia de vencimento, data inicial/final, conta, pausar/retomar/cancelar. Cada ocorrência é uma movimentação própria: pagar, alterar só uma, alterar todas as próximas, cancelar uma, histórico de pagamentos. Geração **idempotente**. |
+| **Recorrências** | Semanal, mensal, trimestral, semestral e anual; dia de vencimento, data inicial/final, pausar/retomar/cancelar. Cobrança em uma **conta** (boleto, débito, Pix…) ou no **cartão de crédito** (assinaturas como academia e streaming entram sozinhas na fatura de cada mês). Cada ocorrência é uma movimentação própria: pagar, alterar só uma, alterar todas as próximas, cancelar uma, histórico de pagamentos. Geração **idempotente**. |
 | **Cartões de crédito** | Limite total e disponível, dia de fechamento e vencimento, cor. Compras à vista ou **parceladas**, faturas abertas/fechadas/vencidas/pagas derivadas automaticamente, pagamento (total ou parcial) e estorno de fatura, parcelas futuras. |
 | **Dívidas** | Empréstimos, financiamentos, compras parceladas, dívidas pessoais e acordos; valor total, pago, saldo devedor, parcelas, juros, parcelas já pagas antes do cadastro, pagamento de parcelas, **amortização extra** (reduz prazo), atrasos, previsão de quitação e comprometimento mensal. |
 | **Objetivos** | Valor desejado e acumulado, datas, prioridade, categoria, status, barra/anel de progresso, aporte mensal necessário e **previsão de conclusão baseada no ritmo real de aportes**. Pode ser vinculado a uma caixinha ou receber aportes manuais. |
-| **Caixinhas** | Reservas independentes com meta, depósitos e resgates a partir de contas, histórico e estorno. Movimentações de caixinha **não contam como receita/despesa**. |
+| **Caixinhas** | Reservas independentes com meta, **saldo inicial** (para cadastrar uma reserva que já existia), depósitos e resgates a partir de contas, histórico e estorno. Movimentações de caixinha **não contam como receita/despesa**. |
 | **Calendário** | Grade mensal (lista no mobile) com contas a vencer, pagas e atrasadas, receitas previstas e recebidas, faturas, parcelas de cartão, parcelas de dívida e recorrências, com cores e legenda por tipo/status. |
 | **Relatórios** | Resultado financeiro, taxa de economia, evolução patrimonial, maiores e menores gastos, comparativo mensal por categoria, fixos × variáveis, recorrentes, gastos extraordinários, previsão dos próximos 3 meses, comprometimento da renda, dívidas e projeção de quitação, evolução dos objetivos e **inteligência financeira**. Exportação **CSV** (movimentações e resumo) e **PDF** (impressão otimizada). |
-| **Configurações** | Dados pessoais, alteração de senha (encerra as outras sessões), moeda (BRL padrão), formato de data, fuso horário, limiares de alerta, antecedência de avisos de vencimento e gerenciamento de sessões ativas. |
+| **Configurações** | Dados pessoais, alteração de senha (encerra as outras sessões), moeda (BRL padrão), formato de data, fuso horário, limiares de alerta, antecedência de avisos de vencimento, gerenciamento de sessões ativas e **exclusão definitiva da conta** (apaga todo o histórico, com senha e confirmação). |
 
 Interface responsiva (desktop e mobile, com navegação inferior e botão rápido de "nova movimentação"), botão global de
 nova movimentação, busca no topo e contador de alertas.
@@ -277,6 +277,11 @@ insights usam as **mesmas funções** de `src/modules/ledger`.
 - **Saldo da conta** = saldo inicial + efeitos das transações pagas.
   **Saldo previsto** = saldo atual + receitas pendentes − despesas pendentes (de conta) até o fim do período.
   **Patrimônio** = contas + caixinhas − faturas em aberto − saldo devedor das dívidas.
+- **Recorrências no cartão**: cada ocorrência é uma compra à vista na fatura correspondente à data da cobrança.
+  Fica **prevista** até a data chegar e então é efetivada — só a partir daí consome limite e entra como despesa
+  realizada. Nunca debita conta; o pagamento é feito pela fatura.
+- **Saldos iniciais**: contas e caixinhas aceitam saldo inicial (dinheiro que já existia antes do cadastro). Ele entra
+  no saldo e no patrimônio, mas não é receita, despesa nem saída de outra conta.
 - **Recorrências idempotentes**: as datas são geradas por uma função pura e determinística e gravadas com upsert
   `$setOnInsert` sobre um índice único `(recurrenceId, occurrenceDate)`. Reprocessar (inclusive em paralelo) nunca
   duplica; ocorrências canceladas ou editadas individualmente nunca são recriadas ou sobrescritas. "Alterar todas as
@@ -304,6 +309,8 @@ insights usam as **mesmas funções** de `src/modules/ledger`.
   Action e Route Handler.
 - Validação com Zod no servidor para toda entrada; saldos e permissões **nunca** são calculados a partir de dados
   enviados pelo cliente.
+- **Exclusão de conta**: exige a senha atual e a palavra `EXCLUIR`; remove todos os documentos do usuário (inclusive
+  anexos no GridFS e sessões) e libera o e-mail para um novo cadastro.
 - Anexos: tipos permitidos (PDF, PNG, JPG, WEBP), limite de 5 MB, nome sanitizado e acesso restrito ao dono.
 
 ---

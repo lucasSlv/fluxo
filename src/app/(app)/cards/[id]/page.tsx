@@ -65,7 +65,7 @@ export default async function CardDetail({ params, searchParams }: { params: Pro
           <Stat label="Fatura atual" value={formatMoney(current.total, cur)} hint={`Fecha em ${formatDate(current.closingDate, fmt)}`} />
           <Stat label="A pagar (fechadas)" value={formatMoney(pending.reduce((s, i) => s + i.remaining, 0), cur)} tone={pending.some((i) => i.status === "overdue") ? "neg" : undefined} hint={pending.length ? `${pending.length} fatura(s)` : "Nada pendente"} />
           <Stat label="Limite disponível" value={formatMoney(card.available, cur)} tone={card.available < 0 ? "neg" : "pos"} />
-          <Stat label="Parcelas futuras" value={formatMoney(cardFuture.reduce((s, f) => s + f.amount, 0), cur)} hint={`${cardFuture.length} parcela(s)`} />
+          <Stat label="Cobranças futuras" value={formatMoney(cardFuture.reduce((s, f) => s + f.amount, 0), cur)} hint={`${cardFuture.length} parcela(s) e assinatura(s)`} />
         </div>
       </div>
 
@@ -109,6 +109,8 @@ export default async function CardDetail({ params, searchParams }: { params: Pro
                       <p className="truncate font-semibold">{c.description}</p>
                       <p className="text-xs text-ink-3">
                         {formatDate(c.date, fmt)} · {cat?.name ?? "Sem categoria"}
+                        {c.recurrenceId ? " · recorrente" : ""}
+                        {c.status === "pending" ? " · prevista" : ""}
                       </p>
                     </div>
                     <Money value={c.amount} className="font-bold" />
@@ -147,7 +149,7 @@ export default async function CardDetail({ params, searchParams }: { params: Pro
           </Card>
 
           <Card>
-            <CardTitle>Parcelas futuras</CardTitle>
+            <CardTitle>Cobranças futuras</CardTitle>
             {cardFuture.length ? (
               <ul className="divide-y divide-line text-sm">
                 {cardFuture.slice(0, 12).map((f) => (
@@ -160,7 +162,7 @@ export default async function CardDetail({ params, searchParams }: { params: Pro
                 {cardFuture.length > 12 && <li className="pt-2 text-xs text-ink-3">+ {cardFuture.length - 12} parcela(s)</li>}
               </ul>
             ) : (
-              <p className="text-sm text-ink-3">Nenhuma parcela futura.</p>
+              <p className="text-sm text-ink-3">Nenhuma cobrança futura.</p>
             )}
           </Card>
         </div>

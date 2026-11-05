@@ -2,15 +2,16 @@ import "server-only";
 import { isValidObjectId, type PipelineStage } from "mongoose";
 import { connectDB } from "@/lib/db";
 import { AppError, invalid, notFound } from "@/lib/errors";
-import { parseDateOnly, today } from "@/lib/dates";
+import { DEFAULT_TZ, parseDateOnly, today } from "@/lib/dates";
 import { escapeRegex } from "@/lib/utils";
-import { Category, Transaction } from "@/models";
+import { Category, CreditCard, Transaction } from "@/models";
+import { invoiceMonthFor } from "@/modules/credit-cards/rules";
 import { ensureAccountUsable } from "@/modules/accounts/service";
 import { oid } from "@/modules/ledger/rules";
 import { audit } from "@/modules/shared/audit";
 import { assertOwned } from "@/modules/shared/ownership";
 import type { TransactionDoc } from "@/models/Transaction";
-import { listFiltersSchema, transactionSchema, type ListFilters, type TransactionInput } from "./schemas";
+import { cardOccurrenceSchema, listFiltersSchema, transactionSchema, type ListFilters, type TransactionInput } from "./schemas";
 
 /** Valida categoria (existe, é do usuário, tipo compatível). */
 async function ensureCategory(userId: string, categoryId: string | null, kind: string) {
@@ -50,9 +51,10 @@ export async function createTransaction(userId: string, input: TransactionInput)
   return { id: String(doc._id) };
 }
 
-export async function updateTransaction(userId: string, id: string, input: TransactionInput) {
+export async function updateTransaction(userId: string, id: string, input: TransactionInput, tz = DEFAULT_TZ) {
   await connectDB();
   const current = await assertOwned(Transaction, userId, id, "Movimentação");
+  if (current.recurrenceId && current.creditCardId) return updateCardOccurrence(userId, current, input, tz);
   if (current.creditCardId || current.debtId || current.savingsBoxId || current.kind === "card_payment") {
     throw new AppError("VALIDATION", "Edite esta movimentação pelo módulo de origem (cartão, dívida ou caixinha).");
   }
@@ -65,6 +67,31 @@ export async function updateTransaction(userId: string, id: string, input: Trans
   if (current.status === "paid" && patch.status === "paid") patch.paidAt = current.paidAt ?? new Date();
   await Transaction.updateOne({ _id: id, userId }, { $set: { ...patch, overridden: current.recurrenceId ? true : current.overridden } });
   await audit(userId, "transaction", id, "update", current, patch);
+}
+
+/**
+ * Edita uma única cobrança recorrente no cartão ("alterar só esta ocorrência"): descrição, valor, data,
+ * categoria e observações. O cartão é mantido; a fatura é recalculada pela nova data.
+ */
+async function updateCardOccurrence(userId: string, current: Awaited<ReturnType<typeof assertOwned<TransactionDoc>>>, input: TransactionInput, tz: string) {
+  if (current.status === "cancelled") throw new AppError("VALIDATION", "Ocorrência cancelada.");
+  const data = cardOccurrenceSchema.parse(input);
+  await ensureCategory(userId, data.categoryId, "expense");
+  const card = await assertOwned(CreditCard, userId, String(current.creditCardId), "Cartão");
+  const effective = data.date <= today(tz);
+  const patch = {
+    description: data.description,
+    amount: data.amount,
+    date: data.date,
+    categoryId: data.categoryId,
+    notes: data.notes,
+    invoiceMonth: invoiceMonthFor(data.date, card.closingDay, card.dueDay),
+    status: effective ? "paid" : "pending",
+    paidAt: effective ? (current.paidAt ?? new Date()) : null,
+    overridden: true,
+  };
+  await Transaction.updateOne({ _id: current._id, userId }, { $set: patch });
+  await audit(userId, "transaction", current._id, "update", current, patch);
 }
 
 /**

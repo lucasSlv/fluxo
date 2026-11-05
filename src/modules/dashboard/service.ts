@@ -55,7 +55,7 @@ export async function getDashboard(userId: string, tz: string, period: Period, t
       .lean(),
     Transaction.find({ userId, status: "pending", dueDate: { $lt: t } }).sort({ dueDate: 1 }).limit(20).populate("categoryId", "name icon color").lean(),
     upcomingCardInstallments(userId, tz, 6),
-    Transaction.find({ userId, recurrenceId: { $ne: null }, status: "pending", dueDate: { $gte: t } }).sort({ dueDate: 1 }).limit(6).lean(),
+    Transaction.find({ userId, recurrenceId: { $ne: null }, status: "pending", date: { $gte: t } }).sort({ date: 1 }).limit(6).populate("creditCardId", "name").lean(),
   ]);
 
   // Saldo previsto ao fim do período: saldo atual + pendências (de conta) até o fim do período, incluindo atrasadas.

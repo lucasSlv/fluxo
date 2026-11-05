@@ -39,7 +39,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const dayIso = (d: number) => `${month}-${String(d).padStart(2, "0")}`;
 
   const sum = (types: CalendarEvent["type"][]) => events.filter((e) => types.includes(e.type)).reduce((s, e) => s + e.amount, 0);
-  const toPay = sum(["bill_due", "card_invoice", "card_installment", "debt", "recurring"]);
+  // Parcelas e recorrências no cartão já estão dentro da fatura: não somam de novo.
+  const toPay = sum(["bill_due", "card_invoice", "debt", "recurring"]);
   const toReceive = sum(["income_expected"]);
   const overdue = sum(["bill_overdue"]);
   const usedTypes = (Object.keys(EVENT_STYLE) as CalendarEvent["type"][]).filter((k) => events.some((e) => e.type === k));

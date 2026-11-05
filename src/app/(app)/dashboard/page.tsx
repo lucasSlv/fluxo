@@ -196,8 +196,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 {d.recurringNext.map((r) => (
                   <li key={String(r._id)} className="flex items-center gap-3 py-2.5">
                     <Repeat size={14} className="text-ink-3" />
-                    <span className="flex-1 truncate font-medium">{r.description}</span>
-                    <span className="text-xs text-ink-3">{formatDate(r.dueDate, fmt)}</span>
+                    <span className="flex-1 truncate font-medium">
+                      {r.description}
+                      {r.creditCardId && <span className="ml-1.5 text-xs font-normal text-ink-3">· cartão</span>}
+                    </span>
+                    <span className="text-xs text-ink-3">{formatDate(r.date, fmt)}</span>
                     <Money value={r.amount} className="w-24 text-right font-semibold" />
                   </li>
                 ))}
@@ -207,7 +210,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             )}
           </Card>
           <Card>
-            <CardTitle action={<Link href="/cards" className="text-xs font-semibold text-ink-3 hover:text-ink">Cartões</Link>}>Parcelas futuras</CardTitle>
+            <CardTitle action={<Link href="/cards" className="text-xs font-semibold text-ink-3 hover:text-ink">Cartões</Link>}>Próximas cobranças no cartão</CardTitle>
             {d.installments.length ? (
               <ul className="divide-y divide-line text-sm">
                 {d.installments.map((i) => (
@@ -220,7 +223,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-ink-3">Nenhuma parcela futura no cartão.</p>
+              <p className="text-sm text-ink-3">Nenhuma cobrança futura no cartão.</p>
             )}
           </Card>
         </section>

@@ -44,10 +44,10 @@ Regras:
 | categories | userId, name, kind (income/expense), icon, color, parentId (subcategoria), archived |
 | budgets | userId, categoryId, month `YYYY-MM`, limit — único por (user, categoria, mês) |
 | transactions | ver abaixo |
-| recurrences | userId, kind, description, amount, categoryId, accountId, frequency, startDate, endDate, dueDay, status |
+| recurrences | userId, kind, description, amount, categoryId, accountId ou creditCardId, frequency, startDate, endDate, dueDay, status |
 | creditcards | userId, name, institution, limit, closingDay, dueDay, color |
 | debts | userId, name, creditor, kind, totalAmount, installmentsCount, installmentAmount, interestRate, contractDate, firstDueDate, accountId |
-| savingsboxes | userId, name, target, color |
+| savingsboxes | userId, name, target, initialBalance, color |
 | goals | userId, name, description, target, startDate, targetDate, priority, category, status, savingsBoxId?, contributions[] |
 | auditlogs | userId, entity, entityId, action, before, after |
 | attachments (GridFS) | comprovantes de movimentações |
@@ -60,7 +60,7 @@ Toda movimentação de dinheiro é um documento em `transactions`, discriminado 
 |---|---|---|
 | `income` | + accountId (quando `paid`) | Receita |
 | `expense` com `accountId` | − accountId (quando `paid`) | Despesa |
-| `expense` com `creditCardId` | nenhum (vira obrigação na fatura) | Despesa (competência = data da parcela) |
+| `expense` com `creditCardId` | nenhum (vira obrigação na fatura) | Despesa (competência = data da parcela/cobrança) |
 | `transfer` | − accountId, + toAccountId | Não |
 | `card_payment` | − accountId, abate fatura do cartão | Não (liquidação) |
 | `savings_deposit` | − accountId, + caixinha | Não |
@@ -68,6 +68,10 @@ Toda movimentação de dinheiro é um documento em `transactions`, discriminado 
 
 Status: `pending` (previsto), `paid` (efetivado), `cancelled`. "Atrasado" é **derivado**: `pending` com vencimento < hoje.
 Assim a compra no cartão é a despesa; o pagamento da fatura é só liquidação — nunca há dupla contagem.
+
+Recorrências podem ser cobradas em uma conta ou em um cartão. No cartão, cada ocorrência é gerada como
+compra à vista na fatura certa, com status `pending` (prevista) até a data, quando passa a `paid` e
+passa a consumir limite. O limite do cartão considera apenas cobranças `paid`.
 
 Idempotência: ocorrências de recorrência têm índice único parcial `(recurrenceId, occurrenceDate)` e são criadas
 com upsert `$setOnInsert`; reprocessar nunca duplica. Parcelas de cartão/dívida compartilham `installment.groupId`.

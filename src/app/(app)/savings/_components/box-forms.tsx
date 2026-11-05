@@ -20,16 +20,16 @@ import { formatMoney } from "@/lib/money";
 const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const COLORS = ["#111111", "#16a34a", "#2563eb", "#9333ea", "#ea580c", "#db2777", "#0d9488", "#ca8a04"];
 
-type BoxValue = { id?: string; name: string; target: number | null; color: string; icon: string };
+type BoxValue = { id?: string; name: string; target: number | null; initialBalance: number | null; color: string; icon: string };
 
 export function BoxFormButton({ initial }: { initial?: BoxValue }) {
   const [open, setOpen] = useState(false);
-  const blank: BoxValue = { name: "", target: null, color: "#111111", icon: "piggy-bank" };
+  const blank: BoxValue = { name: "", target: null, initialBalance: null, color: "#111111", icon: "piggy-bank" };
   const [v, setV] = useState<BoxValue>(initial ?? blank);
   const editing = !!initial?.id;
   const { run, pending, fieldErrors: err } = useAction<BoxValue, unknown>(
     (input): Promise<ActionResult<unknown>> => {
-      const payload = { name: input.name, target: input.target, color: input.color, icon: input.icon };
+      const payload = { name: input.name, target: input.target, initialBalance: input.initialBalance ?? 0, color: input.color, icon: input.icon };
       return editing ? updateBoxAction(initial!.id!, payload) : createBoxAction(payload);
     },
     {
@@ -62,9 +62,14 @@ export function BoxFormButton({ initial }: { initial?: BoxValue }) {
           <Field label="Nome" error={err.name}>
             <Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} placeholder="Ex.: Reserva de emergência" autoFocus invalid={!!err.name} />
           </Field>
-          <Field label="Meta (opcional)" error={err.target}>
-            <MoneyInput value={v.target} onChange={(c) => setV({ ...v, target: c })} />
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Já tenho guardado (opcional)" error={err.initialBalance} hint="Valor que já está na caixinha. Não sai de nenhuma conta.">
+              <MoneyInput value={v.initialBalance} onChange={(c) => setV({ ...v, initialBalance: c })} invalid={!!err.initialBalance} />
+            </Field>
+            <Field label="Meta (opcional)" error={err.target}>
+              <MoneyInput value={v.target} onChange={(c) => setV({ ...v, target: c })} />
+            </Field>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Ícone">
               <Select value={v.icon} onChange={(e) => setV({ ...v, icon: e.target.value })}>

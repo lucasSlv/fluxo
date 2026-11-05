@@ -9,7 +9,7 @@ export async function createTransactionAction(input: TransactionInput) {
   return authedAction("transaction.create", (u) => createTransaction(u.id, input));
 }
 export async function updateTransactionAction(id: string, input: TransactionInput) {
-  return authedAction("transaction.update", (u) => updateTransaction(u.id, id, input));
+  return authedAction("transaction.update", (u) => updateTransaction(u.id, id, input, u.preferences.timezone));
 }
 export async function deleteTransactionAction(id: string) {
   return authedAction("transaction.delete", (u) => deleteTransaction(u.id, id));

@@ -183,10 +183,17 @@ export async function deleteInvoicePayment(userId: string, txId: string) {
   await audit(userId, "transaction", txId, "delete", tx, null);
 }
 
-/** Parcelas futuras (todas as faturas após a atual). */
+/** Cobranças futuras no cartão: parcelas de compras e recorrências (assinaturas). */
 export async function upcomingCardInstallments(userId: string, tz: string, limit = 50) {
   await connectDB();
-  return Transaction.find({ userId, kind: "expense", creditCardId: { $ne: null }, "installment.total": { $gt: 1 }, date: { $gt: today(tz) } })
+  return Transaction.find({
+    userId,
+    kind: "expense",
+    creditCardId: { $ne: null },
+    status: { $ne: "cancelled" },
+    $or: [{ "installment.total": { $gt: 1 } }, { recurrenceId: { $ne: null } }],
+    date: { $gt: today(tz) },
+  })
     .sort({ date: 1 })
     .limit(limit)
     .populate("creditCardId", "name color")

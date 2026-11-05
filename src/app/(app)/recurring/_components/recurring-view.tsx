@@ -29,6 +29,7 @@ export type RecurrenceItem = {
   amount: number;
   categoryId: { _id: string; name: string; icon: string; color: string } | null;
   accountId: { _id: string; name: string } | null;
+  creditCardId: { _id: string; name: string; color: string } | null;
   paymentMethod: string | null;
   frequency: keyof typeof FREQUENCY_LABEL;
   startDate: string;
@@ -51,7 +52,9 @@ type Form = {
   description: string;
   amount: number | null;
   categoryId: string;
+  payWith: "account" | "card";
   accountId: string;
+  creditCardId: string;
   paymentMethod: string;
   frequency: RecurrenceItem["frequency"];
   startDate: string;
@@ -64,9 +67,9 @@ const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60
 
 export function RecurringView({ items, dateFormat }: { items: RecurrenceItem[]; dateFormat: "dd/MM/yyyy" | "yyyy-MM-dd" }) {
   const [form, setForm] = useState<Form | null>(null);
-  const { accounts } = useLookups();
+  const { accounts, cards } = useLookups();
   const openNew = () =>
-    setForm({ kind: "expense", description: "", amount: null, categoryId: "", accountId: accounts[0]?.id ?? "", paymentMethod: "boleto", frequency: "monthly", startDate: todayISO(), endDate: "", dueDay: new Date().getDate(), notes: "" });
+    setForm({ kind: "expense", description: "", amount: null, categoryId: "", payWith: "account", accountId: accounts[0]?.id ?? "", creditCardId: cards[0]?.id ?? "", paymentMethod: "boleto", frequency: "monthly", startDate: todayISO(), endDate: "", dueDay: new Date().getDate(), notes: "" });
   const openEdit = (r: RecurrenceItem) =>
     setForm({
       id: r.id,
@@ -74,7 +77,9 @@ export function RecurringView({ items, dateFormat }: { items: RecurrenceItem[]; 
       description: r.description,
       amount: r.amount,
       categoryId: r.categoryId?._id ?? "",
-      accountId: r.accountId?._id ?? "",
+      payWith: r.creditCardId ? "card" : "account",
+      accountId: r.accountId?._id ?? accounts[0]?.id ?? "",
+      creditCardId: r.creditCardId?._id ?? cards[0]?.id ?? "",
       paymentMethod: r.paymentMethod ?? "other",
       frequency: r.frequency,
       startDate: r.startDate.slice(0, 10),
@@ -103,7 +108,7 @@ export function RecurringView({ items, dateFormat }: { items: RecurrenceItem[]; 
                   {r.description} <Badge tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Badge>
                 </span>
               }
-              subtitle={`${FREQUENCY_LABEL[r.frequency]} · ${r.frequency === "weekly" ? "semanal" : `dia ${r.dueDay}`} · ${r.accountId?.name ?? "—"} · ${r.paidCount} paga(s), ${r.pendingCount} pendente(s)`}
+              subtitle={`${FREQUENCY_LABEL[r.frequency]} · ${r.frequency === "weekly" ? "semanal" : `dia ${r.dueDay}`} · ${r.creditCardId ? `no cartão ${r.creditCardId.name}` : (r.accountId?.name ?? "—")} · ${r.paidCount} ${r.creditCardId ? "cobrada(s)" : "paga(s)"}, ${r.pendingCount} ${r.creditCardId ? "prevista(s)" : "pendente(s)"}`}
               meta={
                 <>
                   <span className="text-ink-3">{r.next ? `Próx.: ${formatDate(r.next, dateFormat)}` : "Sem próximas"}</span>
@@ -165,6 +170,8 @@ function StatusButtons({ r }: { r: RecurrenceItem }) {
 
 function RecurrenceForm({ initial, onDone }: { initial: Form; onDone: () => void }) {
   const [v, setV] = useState(initial);
+  const { cards } = useLookups();
+  const onCard = v.kind === "expense" && v.payWith === "card";
   const set = <K extends keyof Form>(k: K, val: Form[K]) => setV((s) => ({ ...s, [k]: val }));
   const save = useAction<Form, unknown>(
     (f) => {
@@ -173,8 +180,9 @@ function RecurrenceForm({ initial, onDone }: { initial: Form; onDone: () => void
         description: f.description,
         amount: f.amount ?? 0,
         categoryId: f.categoryId,
-        accountId: f.accountId,
-        paymentMethod: f.paymentMethod as never,
+        accountId: onCard ? null : f.accountId,
+        creditCardId: onCard ? f.creditCardId : null,
+        paymentMethod: (onCard ? "credit" : f.paymentMethod) as never,
         frequency: f.frequency,
         startDate: f.startDate,
         endDate: f.endDate || null,
@@ -197,7 +205,7 @@ function RecurrenceForm({ initial, onDone }: { initial: Form; onDone: () => void
       {!initial.id && (
         <SegTabs
           value={v.kind}
-          onChange={(k) => setV((s) => ({ ...s, kind: k, categoryId: "" }))}
+          onChange={(k) => setV((s) => ({ ...s, kind: k, categoryId: "", payWith: k === "income" ? "account" : s.payWith }))}
           items={[
             { value: "expense", label: "Despesa" },
             { value: "income", label: "Receita" },
@@ -214,20 +222,46 @@ function RecurrenceForm({ initial, onDone }: { initial: Form; onDone: () => void
         <Field label="Categoria" error={err.categoryId}>
           <CategorySelect kind={v.kind} value={v.categoryId} onChange={(c) => set("categoryId", c)} invalid={!!err.categoryId} />
         </Field>
-        <Field label="Conta" error={err.accountId}>
-          <AccountSelect value={v.accountId} onChange={(a) => set("accountId", a)} invalid={!!err.accountId} />
-        </Field>
-        <Field label="Forma de pagamento">
-          <Select value={v.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}>
-            {Object.entries(PAYMENT_LABEL)
-              .filter(([k]) => k !== "credit")
-              .map(([k, l]) => (
-                <option key={k} value={k}>
-                  {l}
+        {v.kind === "expense" && cards.length > 0 && (
+          <Field label="Cobrar em" className="sm:col-span-2">
+            <SegTabs
+              value={v.payWith}
+              onChange={(p) => set("payWith", p)}
+              items={[
+                { value: "account", label: "Conta (boleto, débito, Pix…)" },
+                { value: "card", label: "Cartão de crédito" },
+              ]}
+            />
+          </Field>
+        )}
+        {onCard ? (
+          <Field label="Cartão" error={err.creditCardId} hint="Cada cobrança entra na fatura do mês correspondente, como uma compra à vista." className="sm:col-span-2">
+            <Select value={v.creditCardId} onChange={(e) => set("creditCardId", e.target.value)} invalid={!!err.creditCardId}>
+              {cards.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} (fecha dia {c.closingDay}, vence dia {c.dueDay})
                 </option>
               ))}
-          </Select>
-        </Field>
+            </Select>
+          </Field>
+        ) : (
+          <>
+            <Field label="Conta" error={err.accountId}>
+              <AccountSelect value={v.accountId} onChange={(a) => set("accountId", a)} invalid={!!err.accountId} />
+            </Field>
+            <Field label="Forma de pagamento">
+              <Select value={v.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}>
+                {Object.entries(PAYMENT_LABEL)
+                  .filter(([k]) => k !== "credit")
+                  .map(([k, l]) => (
+                    <option key={k} value={k}>
+                      {l}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+          </>
+        )}
         <Field label="Periodicidade" error={err.frequency}>
           <Select value={v.frequency} onChange={(e) => set("frequency", e.target.value as Form["frequency"])}>
             {Object.entries(FREQUENCY_LABEL).map(([k, l]) => (
@@ -237,7 +271,7 @@ function RecurrenceForm({ initial, onDone }: { initial: Form; onDone: () => void
             ))}
           </Select>
         </Field>
-        <Field label="Dia de vencimento" error={err.dueDay} hint={v.frequency === "weekly" ? "Semanal: repete a cada 7 dias a partir da data inicial" : "Em meses curtos, usa o último dia"}>
+        <Field label={onCard ? "Dia da cobrança" : "Dia de vencimento"} error={err.dueDay} hint={v.frequency === "weekly" ? "Semanal: repete a cada 7 dias a partir da data inicial" : "Em meses curtos, usa o último dia"}>
           <Input type="number" min={1} max={31} value={v.dueDay} onChange={(e) => set("dueDay", Number(e.target.value))} disabled={v.frequency === "weekly"} invalid={!!err.dueDay} />
         </Field>
         <Field label="Data inicial" error={err.startDate}>

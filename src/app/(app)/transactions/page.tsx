@@ -121,7 +121,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                         ? `Cartão ${card.name}${tx.invoiceMonth ? ` · fatura ${tx.invoiceMonth.slice(5)}/${tx.invoiceMonth.slice(0, 4)}` : ""}`
                         : (acc?.name ?? "");
                   const payable = ["income", "expense"].includes(tx.kind) && !tx.creditCardId && tx.status !== "cancelled";
-                  const editable = ["income", "expense", "transfer"].includes(tx.kind) && !tx.creditCardId && !tx.debtId && !tx.savingsBoxId && tx.status !== "cancelled";
+                  const cardRecurring = !!tx.creditCardId && !!tx.recurrenceId;
+                  const editable = ["income", "expense", "transfer"].includes(tx.kind) && (!tx.creditCardId || cardRecurring) && !tx.debtId && !tx.savingsBoxId && tx.status !== "cancelled";
                   return (
                     <div key={String(tx._id)} className={cn("flex items-center gap-3 rounded-2xl bg-muted p-3 sm:gap-4", tx.status === "cancelled" && "opacity-50")}>
                       <IconTile name={icon} color={cat?.color} />
@@ -141,6 +142,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                       <div className="hidden shrink-0 sm:block">
                         {tx.status === "cancelled" ? (
                           <Badge>Cancelada</Badge>
+                        ) : tx.creditCardId && tx.status === "pending" ? (
+                          <Badge tone="info">Prevista no cartão</Badge>
                         ) : overdue ? (
                           <Badge tone="neg">Atrasada · {formatDate(tx.dueDate, fmt)}</Badge>
                         ) : tx.status === "pending" ? (
@@ -176,6 +179,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                             paymentMethod: tx.paymentMethod ?? "pix",
                             nature: tx.nature ?? "variable",
                             notes: tx.notes ?? "",
+                            creditCardId: cardRecurring ? String(card?._id) : undefined,
                           },
                         }}
                       />

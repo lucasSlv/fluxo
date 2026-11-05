@@ -13,7 +13,9 @@ const RecurrenceSchema = new Schema(
     description: { type: String, required: true, trim: true, maxlength: 140 },
     amount: { ...cents, min: 1 },
     categoryId: { type: Schema.Types.ObjectId, ref: "Category", default: null },
-    accountId: { type: Schema.Types.ObjectId, ref: "Account", required: true },
+    // Pagamento: em uma conta OU em um cartão de crédito (só despesas).
+    accountId: { type: Schema.Types.ObjectId, ref: "Account", default: null },
+    creditCardId: { type: Schema.Types.ObjectId, ref: "CreditCard", default: null },
     paymentMethod: { type: String, default: null },
     frequency: { type: String, enum: FREQUENCIES, required: true },
     startDate: { type: Date, required: true },
