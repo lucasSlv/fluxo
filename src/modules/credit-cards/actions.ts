@@ -1,7 +1,7 @@
 "use server";
 
 import { authedAction } from "@/modules/auth/dal";
-import { createCard, createPurchase, deleteCard, deleteInvoicePayment, payInvoice, updateCard } from "./service";
+import { createCard, createPurchase, getPurchase, updatePurchase, deleteCard, deleteInvoicePayment, payInvoice, updateCard } from "./service";
 import type { CardInput, InvoicePaymentInput, PurchaseInput } from "./schemas";
 
 export async function createCardAction(input: CardInput) {
@@ -21,4 +21,10 @@ export async function payInvoiceAction(input: InvoicePaymentInput) {
 }
 export async function deleteInvoicePaymentAction(txId: string) {
   return authedAction("card.pay.delete", (u) => deleteInvoicePayment(u.id, txId));
+}
+export async function getPurchaseAction(txId: string) {
+  return authedAction("card.purchase.get", (u) => getPurchase(u.id, txId));
+}
+export async function updatePurchaseAction(txId: string, input: PurchaseInput) {
+  return authedAction("card.purchase.update", (u) => updatePurchase(u.id, txId, input));
 }

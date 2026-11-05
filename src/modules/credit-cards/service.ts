@@ -60,17 +60,18 @@ export async function deleteCard(userId: string, id: string): Promise<"deleted" 
  * Registra uma compra (à vista ou parcelada). Cada parcela é uma despesa na sua fatura,
  * com competência na data da parcela. Nenhuma afeta saldo de conta.
  */
-export async function createPurchase(userId: string, input: PurchaseInput) {
-  const data = purchaseSchema.parse(input);
-  await connectDB();
+async function validatePurchase(userId: string, data: ReturnType<typeof purchaseSchema.parse>) {
   const card = await assertOwned(CreditCard, userId, data.cardId, "Cartão");
   if (card.archived) throw invalid("Cartão arquivado.", { cardId: "Cartão arquivado" });
   const cat = await assertOwned(Category, userId, data.categoryId, "Categoria");
   if (cat.kind !== "expense") throw invalid("Use uma categoria de despesa.", { categoryId: "Categoria incompatível" });
+  return card;
+}
 
+/** Monta as parcelas de uma compra: cada uma na sua fatura, com competência na data da parcela. */
+function purchaseDocs(userId: string, data: ReturnType<typeof purchaseSchema.parse>, card: { _id: unknown; closingDay: number; dueDay: number }, groupId: Types.ObjectId) {
   const amounts = splitInstallments(data.amount, data.installments);
   const firstInvoice = invoiceMonthFor(data.date, card.closingDay, card.dueDay);
-  const groupId = new Types.ObjectId();
   const docs = amounts.map((amount, i) => ({
     userId,
     kind: "expense",
@@ -87,9 +88,68 @@ export async function createPurchase(userId: string, input: PurchaseInput) {
     nature: data.nature,
     notes: data.notes,
   }));
+  return { docs, firstInvoice };
+}
+
+export async function createPurchase(userId: string, input: PurchaseInput) {
+  const data = purchaseSchema.parse(input);
+  await connectDB();
+  const card = await validatePurchase(userId, data);
+  const groupId = new Types.ObjectId();
+  const { docs, firstInvoice } = purchaseDocs(userId, data, card, groupId);
   const created = await Transaction.insertMany(docs);
   for (const d of created) await audit(userId, "transaction", d._id, "create", null, d.toObject());
   return { groupId: String(groupId), firstInvoice };
+}
+
+/** Remove o sufixo " (2/10)" que as parcelas recebem. */
+const baseDescription = (s: string) => s.replace(/\s\(\d+\/\d+\)$/, "");
+
+/** Parcelas da compra a que uma movimentação de cartão pertence (compras recorrentes não entram). */
+async function purchaseGroup(userId: string, txId: string) {
+  const tx = await assertOwned(Transaction, userId, txId, "Compra");
+  if (tx.kind !== "expense" || !tx.creditCardId || tx.recurrenceId) throw new AppError("VALIDATION", "Esta movimentação não é uma compra no cartão.");
+  const items = tx.installment?.groupId
+    ? await Transaction.find({ userId, "installment.groupId": tx.installment.groupId }).sort({ "installment.number": 1 }).lean()
+    : [tx];
+  return { tx, items };
+}
+
+/** Dados da compra como foram lançados (valor total, data da 1ª parcela, nº de parcelas). */
+export async function getPurchase(userId: string, txId: string) {
+  await connectDB();
+  const { items } = await purchaseGroup(userId, txId);
+  const first = items[0];
+  return {
+    cardId: String(first.creditCardId),
+    description: baseDescription(first.description),
+    amount: items.reduce((s, i) => s + i.amount, 0),
+    date: first.date.toISOString().slice(0, 10),
+    installments: items.length,
+    categoryId: first.categoryId ? String(first.categoryId) : "",
+    nature: (first.nature ?? "variable") as "fixed" | "variable",
+    notes: first.notes ?? "",
+  };
+}
+
+/**
+ * Corrige uma compra no cartão: todas as parcelas são recalculadas (valor, datas, faturas, nº de parcelas,
+ * cartão). Mantém o mesmo identificador da compra e registra o histórico. Pagamentos de fatura já feitos
+ * não são alterados — se a fatura ficar com valor pago maior que o total, o excedente aparece como crédito.
+ */
+export async function updatePurchase(userId: string, txId: string, input: PurchaseInput) {
+  const data = purchaseSchema.parse(input);
+  await connectDB();
+  const { tx, items } = await purchaseGroup(userId, txId);
+  const card = await validatePurchase(userId, data);
+  const groupId = (tx.installment?.groupId as Types.ObjectId | null) ?? new Types.ObjectId();
+  const { docs } = purchaseDocs(userId, data, card, groupId);
+  // Insere as novas parcelas antes de remover as antigas: em caso de falha, nada se perde.
+  const created = await Transaction.insertMany(docs);
+  await Transaction.deleteMany({ userId, _id: { $in: items.map((i) => i._id) } });
+  for (const old of items) await audit(userId, "transaction", old._id, "delete", old, null);
+  for (const d of created) await audit(userId, "transaction", d._id, "create", null, d.toObject());
+  return { id: String(created[0]._id) };
 }
 
 export type Invoice = {

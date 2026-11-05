@@ -13,7 +13,7 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx value={open}>
       {children}
-      <Modal open={!!state} onClose={() => setState(null)} title={state?.id ? "Editar movimentação" : "Nova movimentação"} size="lg">
+      <Modal open={!!state} onClose={() => setState(null)} title={state?.purchase ? "Editar compra no cartão" : state?.id ? "Editar movimentação" : "Nova movimentação"} size="lg">
         {state && <TransactionForm key={state.id ?? "new"} initial={state} onDone={() => setState(null)} />}
       </Modal>
     </Ctx>

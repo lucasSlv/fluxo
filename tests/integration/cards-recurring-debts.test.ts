@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Recurrence, Transaction } from "@/models";
 import { accountBalances, periodTotals, netWorth } from "@/modules/ledger/service";
-import { cardInvoices, createCard, createPurchase, listCards, payInvoice } from "@/modules/credit-cards/service";
+import { cardInvoices, createCard, createPurchase, getPurchase, listCards, payInvoice, updatePurchase } from "@/modules/credit-cards/service";
 import { createRecurrence, ensureRecurrencesGenerated, setRecurrenceStatus, updateRecurrence } from "@/modules/recurring/service";
 import { createDebt, extraPayment, listDebts, syncDebtStatus } from "@/modules/debts/service";
 import { deleteTransaction, setTransactionStatus, updateTransaction } from "@/modules/transactions/service";
@@ -50,6 +50,52 @@ describe("credit cards", () => {
     const one = await Transaction.findOne({ userId, creditCardId: card }).lean();
     await deleteTransaction(userId, String(one!._id));
     expect(await Transaction.countDocuments({ userId, creditCardId: card })).toBe(0);
+  });
+});
+
+describe("editing a card purchase", () => {
+  it("recalculates every installment, invoice and the limit; keeps invoice payments", async () => {
+    const { userId, cat } = await makeUser();
+    const acc = await makeAccount(userId, 500000);
+    const { id: card } = await createCard(userId, { name: "A", limit: 300000, closingDay: 25, dueDay: 5 });
+    const { id: other } = await createCard(userId, { name: "B", limit: 300000, closingDay: 10, dueDay: 20 });
+    const compras = await cat("Compras");
+    await createPurchase(userId, { cardId: card, description: "TV", amount: 300000, date: "2026-11-10", installments: 3, categoryId: compras });
+    await payInvoice(userId, { cardId: card, invoiceMonth: "2026-12", accountId: acc, amount: 50000, date: "2026-12-01" }, "UTC");
+    const second = await Transaction.findOne({ userId, description: "TV (2/3)" }).lean();
+
+    expect(await getPurchase(userId, String(second!._id))).toMatchObject({ description: "TV", amount: 300000, installments: 3, date: "2026-11-10", cardId: card });
+
+    // Valor digitado errado, 2 parcelas, outra data e outro cartão.
+    const { id } = await updatePurchase(userId, String(second!._id), { cardId: other, description: "Smart TV", amount: 200000, date: "2026-11-12", installments: 2, categoryId: compras });
+    const items = await Transaction.find({ userId, creditCardId: { $ne: null }, kind: "expense" }).sort({ date: 1 }).lean();
+    expect(items.map((i) => [i.description, i.amount, String(i.creditCardId), i.invoiceMonth])).toEqual([
+      // Cartão B fecha dia 10: compra em 12/11 entra na fatura que vence em 20/12.
+      ["Smart TV (1/2)", 100000, other, "2026-12"],
+      ["Smart TV (2/2)", 100000, other, "2027-01"],
+    ]);
+    expect(String(items[0]._id)).toBe(id);
+    expect(new Set(items.map((i) => String(i.installment!.groupId))).size).toBe(1);
+
+    const cards = await listCards(userId);
+    expect(cards.find((c) => c.id === other)!.used).toBe(200000);
+    // O pagamento de fatura já feito no cartão antigo não é alterado.
+    expect(await Transaction.countDocuments({ userId, kind: "card_payment", creditCardId: card })).toBe(1);
+    expect((await accountBalances(userId)).get(acc)).toBe(450000);
+    expect((await periodTotals(userId, d("2026-11-01"), d("2026-11-30"))).expense).toBe(100000);
+  });
+
+  it("rejects recurring charges, non-card transactions and other users' purchases", async () => {
+    const { userId, cat } = await makeUser();
+    const acc = await makeAccount(userId);
+    const { id: card } = await createCard(userId, { name: "A", limit: 1000, closingDay: 1, dueDay: 10 });
+    const input = { cardId: card, description: "X", amount: 100, date: "2026-11-01", categoryId: await cat("Compras") };
+    const { id: tx } = await createTransaction(userId, { kind: "expense", description: "Conta", amount: 100, date: "2026-11-01", categoryId: await cat("Outros"), accountId: acc });
+    await expect(updatePurchase(userId, tx, input)).rejects.toThrow(/não é uma compra/);
+    await createPurchase(userId, input);
+    const p = await Transaction.findOne({ userId, creditCardId: card }).lean();
+    const intruder = await makeUser();
+    await expect(getPurchase(intruder.userId, String(p!._id))).rejects.toThrow(/não encontrad/);
   });
 });
 

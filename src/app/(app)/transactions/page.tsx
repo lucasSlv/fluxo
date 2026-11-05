@@ -122,7 +122,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                         : (acc?.name ?? "");
                   const payable = ["income", "expense"].includes(tx.kind) && !tx.creditCardId && tx.status !== "cancelled";
                   const cardRecurring = !!tx.creditCardId && !!tx.recurrenceId;
-                  const editable = ["income", "expense", "transfer"].includes(tx.kind) && (!tx.creditCardId || cardRecurring) && !tx.debtId && !tx.savingsBoxId && tx.status !== "cancelled";
+                  const cardPurchase = tx.kind === "expense" && !!tx.creditCardId && !tx.recurrenceId;
+                  const editable = ["income", "expense", "transfer"].includes(tx.kind) && !tx.debtId && !tx.savingsBoxId && tx.status !== "cancelled";
                   return (
                     <div key={String(tx._id)} className={cn("flex items-center gap-3 rounded-2xl bg-muted p-3 sm:gap-4", tx.status === "cancelled" && "opacity-50")}>
                       <IconTile name={icon} color={cat?.color} />
@@ -165,6 +166,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                           payable,
                           recurring: !!tx.recurrenceId,
                           installmentGroup: !!(tx.creditCardId && (tx.installment?.total ?? 0) > 1),
+                          cardPurchase,
                           form: {
                             id: String(tx._id),
                             kind: tx.kind as "income" | "expense" | "transfer",

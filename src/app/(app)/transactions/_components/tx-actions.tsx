@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { useAction } from "@/hooks/use-action";
 import { useQuickAdd } from "@/components/layout/quick-add";
 import { deleteTransactionAction, setTransactionStatusAction } from "@/modules/transactions/actions";
+import { getPurchaseAction } from "@/modules/credit-cards/actions";
+import { useToast } from "@/components/ui/toast";
 import type { TransactionFormValue } from "@/components/finance/transaction-form";
 
 export type TxActionData = {
@@ -18,6 +20,8 @@ export type TxActionData = {
   payable: boolean;
   recurring: boolean;
   installmentGroup: boolean;
+  /** Compra no cartão: a edição carrega e altera a compra inteira. */
+  cardPurchase?: boolean;
   form: TransactionFormValue;
 };
 
@@ -27,6 +31,15 @@ export function TxActions({ tx }: { tx: TxActionData }) {
   const [confirm, setConfirm] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const openForm = useQuickAdd();
+  const toast = useToast();
+  const edit = async () => {
+    setMenu(false);
+    if (!tx.cardPurchase) return openForm(tx.form);
+    const res = await getPurchaseAction(tx.id);
+    if (!res.ok) return toast(res.error, "error");
+    const p = res.data;
+    openForm({ ...tx.form, id: tx.id, description: p.description, amount: p.amount, date: p.date, categoryId: p.categoryId, nature: p.nature, notes: p.notes, paymentMethod: "credit", purchase: { cardId: p.cardId, installments: p.installments } });
+  };
   const status = useAction((s: "paid" | "pending") => setTransactionStatusAction(tx.id, s), { success: "Status atualizado" });
   const del = useAction(() => deleteTransactionAction(tx.id), {
     success: tx.recurring ? "Ocorrência cancelada" : "Movimentação excluída",
@@ -59,8 +72,8 @@ export function TxActions({ tx }: { tx: TxActionData }) {
             <Eye size={14} /> Detalhes e anexos
           </Link>
           {tx.editable && (
-            <button className={item} onClick={() => (setMenu(false), openForm(tx.form))}>
-              <Pencil size={14} /> {tx.recurring ? "Editar só esta ocorrência" : "Editar"}
+            <button className={item} onClick={edit}>
+              <Pencil size={14} /> {tx.recurring ? "Editar só esta ocorrência" : tx.cardPurchase && tx.installmentGroup ? "Editar compra (todas as parcelas)" : "Editar"}
             </button>
           )}
           {tx.payable && tx.status === "paid" && (

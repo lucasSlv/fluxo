@@ -12,7 +12,8 @@ import { useLookups } from "@/components/layout/lookups";
 import { useAction } from "@/hooks/use-action";
 import type { ActionResult } from "@/lib/errors";
 import { createTransactionAction, updateTransactionAction } from "@/modules/transactions/actions";
-import { createPurchaseAction } from "@/modules/credit-cards/actions";
+import { createPurchaseAction, updatePurchaseAction } from "@/modules/credit-cards/actions";
+import type { PurchaseInput } from "@/modules/credit-cards/schemas";
 import { PAYMENT_LABEL } from "@/modules/transactions/schemas";
 import { AccountSelect, CategorySelect } from "./category-select";
 
@@ -34,6 +35,8 @@ export type TransactionFormValue = {
   notes: string;
   /** Ocorrência recorrente no cartão (edição): o cartão é fixo e não há conta/status. */
   creditCardId?: string;
+  /** Edição de compra no cartão: dados da compra inteira (todas as parcelas). */
+  purchase?: { cardId: string; installments: number };
 };
 
 const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -50,12 +53,13 @@ export function TransactionForm({ initial, onDone }: { initial: TransactionFormV
   const { accounts, cards } = useLookups();
   const toast = useToast();
   const [v, setV] = useState<TransactionFormValue>({ ...initial, accountId: initial.accountId || accounts[0]?.id || "" });
-  const [cardId, setCardId] = useState(cards[0]?.id ?? "");
-  const [installments, setInstallments] = useState(1);
+  const [cardId, setCardId] = useState(initial.purchase?.cardId ?? cards[0]?.id ?? "");
+  const [installments, setInstallments] = useState(initial.purchase?.installments ?? 1);
   const [file, setFile] = useState<File | null>(null);
   const editing = !!initial.id;
-  const isCard = v.kind === "expense" && v.paymentMethod === "credit" && !editing;
-  const cardOccurrence = editing && !!initial.creditCardId;
+  const editingPurchase = editing && !!initial.purchase;
+  const isCard = (v.kind === "expense" && v.paymentMethod === "credit" && !editing) || editingPurchase;
+  const cardOccurrence = editing && !!initial.creditCardId && !editingPurchase;
   const occurrenceCard = cards.find((c) => c.id === initial.creditCardId);
   const set = <K extends keyof TransactionFormValue>(k: K, val: TransactionFormValue[K]) => setV((s) => ({ ...s, [k]: val }));
 
@@ -89,7 +93,10 @@ export function TransactionForm({ initial, onDone }: { initial: TransactionFormV
     },
     { success: editing ? "Movimentação atualizada" : "Movimentação registrada", onSuccess: onDone },
   );
-  const purchase = useAction(createPurchaseAction, { success: "Compra registrada no cartão", onSuccess: onDone });
+  const purchase = useAction<PurchaseInput, unknown>(
+    (input) => (editingPurchase ? updatePurchaseAction(initial.id!, input) : createPurchaseAction(input)),
+    { success: editingPurchase ? "Compra atualizada (todas as parcelas)" : "Compra registrada no cartão", onSuccess: onDone },
+  );
   const pending = tx.pending || purchase.pending;
   const err = { ...tx.fieldErrors, ...purchase.fieldErrors };
 
@@ -228,6 +235,11 @@ export function TransactionForm({ initial, onDone }: { initial: TransactionFormV
         )}
       </div>
 
+      {editingPurchase && (
+        <p className="rounded-xl bg-muted px-3 py-2 text-xs text-ink-2">
+          Você está editando a compra inteira: ao salvar, todas as parcelas e faturas são recalculadas. Pagamentos de fatura já feitos não mudam.
+        </p>
+      )}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onDone}>
           Cancelar
